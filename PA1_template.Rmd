@@ -1,25 +1,126 @@
 ---
-title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+title: "Course Project 1"
+output: html_document
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
 
 ## Loading and preprocessing the data
 
+First we will load and look at our data:
 
+```{r, echo=TRUE}
+data <- read.csv('activity.csv')
+summary(data)
+head(data)
+```
 
-## What is mean total number of steps taken per day?
+Looks like our data is labelled appropriately. We may need to do some grouping of the intervals to suit our needs, and we will also need to deal with missing values (initially ignoring/removing them, and imputing later).
 
+## Mean total number of steps taken per day
 
+Our purpose is to look at daily step count, which means we need to sum up the all the intervals for each date into one total. We will also filter out missing data points (as per assignment instructions).
 
-## What is the average daily activity pattern?
+```{r, echo=TRUE, message=FALSE}
+library(ggplot2)
+library(dplyr)
 
+filtered_data <- data %>% filter(!is.na(steps)) %>% group_by(date)
+total_steps <- summarise(filtered_data, total_steps = sum(steps))
+total_steps
+```
 
+Now we can calculate the total number of steps (ignoring missing values as outlined in the assignment description) and plot a histogram showing their distribution, followed by reporting on the mean and median:
+
+```{r, echo=TRUE, fig.width=16, message=FALSE}
+cat('Total number of steps taken: ', sum(total_steps$total_steps))
+ggplot(total_steps, aes(total_steps)) + geom_histogram(breaks=seq(0, 22000, by =500),
+                                                       col='black') +
+                                        labs(title = 'Histogram of total daily steps',
+                                             x = 'Total steps',
+                                             y = 'Count')
+
+cat('Mean: ', mean(total_steps$total_steps))
+cat('Median: ', median(total_steps$total_steps))
+```
+
+Although the histogram is a little sparse, it does look like a reasonably balanced distribution. The mean and median being almost the same reinforces this observation.
+
+## Average daily activity pattern
+
+Now we need to group our data by 5-minute intervals so we can plot a time series of the average steps taken during each 5-minute interval.
+
+```{r}
+filtered_data <- data %>% filter(!is.na(steps)) %>% group_by(interval)
+interval_avg <- summarise(filtered_data, avg = mean(steps))
+interval_avg
+
+ggplot(interval_avg, aes(interval, avg)) + geom_line() +
+                                           labs(title = 'Average steps during each 5-min interval',
+                                                x = '5-min interval (start)',
+                                                y = 'Average steps taken')
+```
+
+And then a quick check to see which interval corresponds with the greatest average:
+
+```{r}
+interval_avg[interval_avg$avg == max(interval_avg$avg), 1]
+```
+
+Here we see that the 5-min interval starting at minute 835 has the greatest number of steps taken on average.
 
 ## Imputing missing values
 
+Until now we have been ignoring missing values in our calculations, but this can introduce some unwanted bias. Now we will attempt to deal with our missing values in a better way than simply ignoring them.
 
+```{r}
+summary(data)
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+Here we see there are 2304 missing values. We are going to replace these missing values with the mean of steps for the corresponding intervals.
+
+```{r}
+impute.mean <- function(x) replace(x, is.na(x), mean(x, na.rm = TRUE))
+new_data <- data %>% group_by(interval) %>% mutate(steps = impute.mean(steps))
+summary(new_data)
+```
+
+Now we will recreate the histogram of the total daily steps and compare the results to what we had before.
+
+```{r, echo=TRUE, fig.width=16, message=FALSE}
+new_filtered_data <- new_data %>% group_by(date)
+total_steps <- summarise(new_filtered_data, total_steps = sum(steps))
+cat('Total number of steps taken: ', sum(total_steps$total_steps))
+ggplot(total_steps, aes(total_steps)) + geom_histogram(breaks=seq(0, 22000, by =500),
+                                                       col='black') +
+                                        labs(title = 'Histogram of total daily steps',
+                                             x = 'Total steps',
+                                             y = 'Count')
+
+cat('Mean: ', mean(total_steps$total_steps))
+cat('Median: ', median(total_steps$total_steps))
+```
+
+After imputing missing values we do see an increase in the total number of steps taken, however, we see little to no change in the histogram, mean, and median. This is most likely due to the fact that the missing value's did not make up a large portion of the data set to begin with.
+
+## Differences in activity patterns between weekdays and weekends
+
+First we need to create a column specifying if our data occured on a weekday or a weekend. Then we are free to plot the comparison grouped by the interval.
+
+```{r}
+library(lattice)
+
+filtered_data <- new_data
+filtered_data$date <- as.Date(filtered_data$date)
+weekdaysvec <- c('Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday')
+filtered_data$day <- factor((weekdays(filtered_data$date) %in% weekdaysvec),
+                     levels=c(FALSE, TRUE), labels=c('weekend', 'weekday'))
+
+filtered_group <- filtered_data %>% group_by(interval, day) %>% summarise(steps = sum(steps))
+xyplot(steps ~ interval|day, data=filtered_group, type='l',layout=c(1,2),
+       xlab='Interval', ylab='Number of Steps')
+```
+
+From this graph it appears weekdays are more active than weekends.
